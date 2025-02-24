@@ -1,0 +1,40 @@
+[package]
+name = "df"
+version = "0.0.1"
+edition = "2021"
+description = "Huh"
+license = "Apache-2.0"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.82"
+axum = { version = "0.8.0", features = ["macros"]}
+chrono = "0.4.38"
+clap = { version = "4.5.4", features = ["derive", "env"]}
+
+# Waiting for maud > 0.26.0
+maud = { git = "https://github.com/lambda-fairy/maud.git", ref = "3eaa6e8f60fca34273f5be25dc5227829c1995b1", version = "0.26.0", features = ["axum"] }
+futures = "0.3.30"
+tower-http = { version = "0.6.0", features = ["tracing", "trace", "compression-gzip"] }
+once_cell = "1.19.0"
+serde = { version = "1.0.200", features = ["derive"] }
+serde_json = "1.0.116"
+tokio = { version = "1.37.0", features = ["full"]}
+toml = "0.8.12"
+tracing = "0.1.40"
+
+tonic = { version = "0.12.0", features = ["tls", "tls-roots"] }
+service_conventions = { version = "0.0.26", features = ["tracing", "oidc", "tracing-http"]}
+
+uuid = {version = "1.8.0", features = ["v4", "serde"]}
+thiserror = "2.0.0"
+
+http = "1.1.0"
+serde_qs = "0.13.0"
+chronoutil = "0.2.7"
+deltalake = { version = "0.24", features = ["deltalake-aws", "s3", "datafusion"] }
+object_store = { version = "0.11.2", features = ["aws"] }
+serde_arrow = { version = "0.12.3", features = ["arrow-53"] }
+arrow = "53.2.0"
