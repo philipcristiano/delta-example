@@ -8,10 +8,16 @@ use deltalake::{open_table_with_storage_options, DeltaOps, TableProperty};
 use serde::{Serialize, Deserialize};
 use serde_arrow::schema::{SchemaLike, TracingOptions};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct R {
     num: i32,
     letter: String,
+    maybe: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct AddColumn {
+    maybe: Option<i32>,
 }
 
 #[tokio::main]
@@ -23,6 +29,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Specify the correct path to your Delta table
     let path = "s3://datafusion-test/test.dl";
+    //let path = "memory://test";
+    //let path = "test/test.dl";
     deltalake::aws::register_handlers(None);
     let arc_fields = Vec::<FieldRef>::from_type::<R>(TracingOptions::default())?;
     let fields: Vec<StructField> = arc_fields.clone()
@@ -34,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
     // Open the Delta table using the object store and path
     println!("Opening table!");
     let table_open = open_table_with_storage_options(path, options).await;
+
     let table = match table_open {
         Ok(t) => t,
         Err(e) => {
@@ -55,12 +64,28 @@ async fn main() -> anyhow::Result<()> {
 
     };
 
+    if table.schema().expect("schema").fields.contains_key("maybe") {
+        println!("Has `maybe` column");
+
+    } else {
+        println!("DOES NOT have `maybe` column");
+        let delta_ops_migrate_column = DeltaOps::try_from_uri(path).await?;
+
+        let arc_fields = Vec::<FieldRef>::from_type::<AddColumn>(TracingOptions::default())?;
+        let fields: Vec<StructField> = arc_fields.clone()
+        .into_iter()
+        .map(|arc| (&*arc).try_into().expect("blah"))
+        .collect();
+        delta_ops_migrate_column.add_columns().with_fields(fields).await?;
+
+    }
+
     let delta_ops = DeltaOps::try_from_uri(path).await?;
 
     let records = vec![
-        R { num: 4, letter: "d".to_string() },
-        R { num: 5, letter: "e".to_string() },
-        R { num: 6, letter: "f".to_string() },
+        R { num: 4, letter: "d".to_string(), maybe: Some(1) },
+        R { num: 5, letter: "e".to_string(), maybe: None },
+        R { num: 6, letter: "f".to_string(), maybe: Some(3) },
     ];
     let batch = serde_arrow::to_record_batch(&arc_fields, &records)?;
 
@@ -73,15 +98,27 @@ async fn main() -> anyhow::Result<()> {
     ctx.sql("SELECT * FROM some_table;").await?.show().await?;
 
     use deltalake::datafusion::logical_expr as expr;
-    let dataframe = ctx.table( "some_table").await?;
+    use std::time::Instant;
+    let dataframe = ctx.table("some_table").await?;
     let df = dataframe
-        .filter(expr::col("num").eq(expr::lit(1)))?
-        .select(vec![expr::col("num")])?;
-    df.show().await?;
+        .filter(
+            expr::or(
+                expr::col("num").eq(expr::lit(1)),
+                expr::col("num").eq(expr::lit(4)),
+            )
+        )?;
+        //.select(vec![expr::col("num")])?;
+    let now = Instant::now();
+    let items: Result<Vec<Vec<R>>, serde_arrow::Error> = df.collect().await?.iter().map(|rb| serde_arrow::from_record_batch(&rb)).collect();
+    for i in items?.iter().flatten() {
+        println!("Record {i:?}")
+    }
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
 
     delta_ops.write([batch]).await?;
-    DeltaOps::try_from_uri(path).await?.optimize().with_type(deltalake::operations::optimize::OptimizeType::Compact).await?;
-    DeltaOps::try_from_uri(path).await?.vacuum().await?;
+    //DeltaOps::try_from_uri(path).await?.optimize().with_type(deltalake::operations::optimize::OptimizeType::Compact).await?;
+    //DeltaOps::try_from_uri(path).await?.vacuum().await?;
     ctx.sql("SELECT count(*) FROM some_table;").await?.show().await?;
 
     Ok(())
