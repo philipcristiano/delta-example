@@ -117,8 +117,8 @@ async fn main() -> anyhow::Result<()> {
     println!("Elapsed: {:.2?}", elapsed);
 
     delta_ops.write([batch]).await?;
-    //DeltaOps::try_from_uri(path).await?.optimize().with_type(deltalake::operations::optimize::OptimizeType::Compact).await?;
-    //DeltaOps::try_from_uri(path).await?.vacuum().await?;
+    DeltaOps::try_from_uri(path).await?.optimize().with_type(deltalake::operations::optimize::OptimizeType::Compact).await?;
+    DeltaOps::try_from_uri(path).await?.vacuum().await?;
     ctx.sql("SELECT count(*) FROM some_table;").await?.show().await?;
 
     Ok(())
