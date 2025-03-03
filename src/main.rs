@@ -87,12 +87,20 @@ async fn main() -> anyhow::Result<()> {
         R { num: 5, letter: "e".to_string(), maybe: None },
         R { num: 6, letter: "f".to_string(), maybe: Some(3) },
     ];
+    let df_records = vec![
+        R { num: 7, letter: "g".to_string(), maybe: Some(10) },
+        R { num: 8, letter: "h".to_string(), maybe: None },
+        R { num: 9, letter: "i".to_string(), maybe: Some(30) },
+    ];
     let batch = serde_arrow::to_record_batch(&arc_fields, &records)?;
+    let batch_to_merge = serde_arrow::to_record_batch(&arc_fields, &df_records)?;
+    use deltalake::datafusion::prelude::SessionContext;
+    let ctx = SessionContext::new();
+    let df_to_merge = ctx.read_batch(batch_to_merge)?;
 
     // Further processing on the Delta table...
     println!("Delta table opened successfully!");
     println!("Schema {:?}", table.metadata());
-    use deltalake::datafusion::prelude::SessionContext;
     let ctx = SessionContext::new();
     ctx.register_table("some_table", Arc::new(table.clone()))?;
     ctx.sql("SELECT * FROM some_table;").await?.show().await?;
@@ -115,6 +123,27 @@ async fn main() -> anyhow::Result<()> {
     }
     let elapsed = now.elapsed();
     println!("Elapsed: {:.2?}", elapsed);
+    //let count = table.state.expect("").files_count();
+    //println!("Files count: {count}");
+
+    let (table, metrics) = DeltaOps(table)
+        .merge(df_to_merge,
+               expr::col("target.num").eq(expr::col("source.num")))
+        .with_source_alias("source")
+        .with_target_alias("target")
+        .when_not_matched_insert(|insert| {
+        insert
+            .set("num", expr::col("source.num"))
+            .set("letter", expr::col("source.letter"))
+            .set("maybe", expr::col("source.maybe"))
+            })?
+        .when_matched_update(|update| {
+        update
+            .update("letter", expr::lit("x"))
+    })?
+
+    .await?;
+    println!("Metrics {metrics:?}");
 
     delta_ops.write([batch]).await?;
     DeltaOps::try_from_uri(path).await?.optimize().with_type(deltalake::operations::optimize::OptimizeType::Compact).await?;
